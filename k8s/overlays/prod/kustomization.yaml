@@ -1,0 +1,26 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: devops-training-prod
+resources:
+  - ../../base
+images:
+  - name: training-app
+    newName: rohan700/training-app
+    newTag: stable
+patches:
+  - patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 3
+    target:
+      kind: Deployment
+      name: training-app
+configMapGenerator:
+  - name: training-app-config
+    behavior: merge
+    literals:
+      - APP_VERSION=v1.0.0
+      - ENVIRONMENT=production
+      - LOG_LEVEL=warn
+generatorOptions:
+  disableNameSuffixHash: true

@@ -1,0 +1,11 @@
+{
+  "name": "devops-training-app",
+  "version": "1.0.0",
+  "scripts": {
+    "start": "node src/index.js",
+    "test": "node src/index.js & APP_PID=$! && sleep 3 && curl -sf http://localhost:3000/healthz && curl -sf http://localhost:3000/readyz && curl -sf http://localhost:3000/startupz && kill $APP_PID && echo 'ALL TESTS PASSED'"
+  },
+  "dependencies": {
+    "express": "^4.18.2"
+  }
+}

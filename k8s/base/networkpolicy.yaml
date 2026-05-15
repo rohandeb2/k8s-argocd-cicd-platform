@@ -1,0 +1,66 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-all
+  namespace: devops-training
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-training-app-ingress
+  namespace: devops-training
+spec:
+  podSelector:
+    matchLabels:
+      app: training-app
+  policyTypes:
+    - Ingress
+  ingress:
+    - ports:
+        - port: 3000
+          protocol: TCP
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-training-app-egress
+  namespace: devops-training
+spec:
+  podSelector:
+    matchLabels:
+      app: training-app
+  policyTypes:
+    - Egress
+  egress:
+    - ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+    - ports:
+        - port: 443
+          protocol: TCP
+    - ports:
+        - port: 80
+          protocol: TCP
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-hooks-egress
+  namespace: devops-training
+spec:
+  podSelector:
+    matchLabels:
+      argocd.argoproj.io/hook: PostSync
+  policyTypes:
+    - Egress
+  egress:
+    - ports:
+        - port: 80
+          protocol: TCP

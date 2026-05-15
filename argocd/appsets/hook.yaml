@@ -1,0 +1,190 @@
+# ─────────────────────────────────────────────────────────────
+# ArgoCD Sync Hooks
+#
+# Hooks are Jobs that ArgoCD runs at specific points in the sync lifecycle.
+# They are NOT regular resources — ArgoCD manages them separately.
+#
+# Hook lifecycle:
+#   PreSync  → runs BEFORE any manifests are applied
+#   Sync     → runs DURING the sync (same time as resources)
+#   PostSync → runs AFTER all resources are synced AND healthy
+#   SyncFail → runs if the sync fails (for cleanup/alerting)
+#
+# If a hook Job fails → ArgoCD marks the entire sync as Failed.
+# This is your safety net.
+# ─────────────────────────────────────────────────────────────
+
+# ── PreSync: runs before deployment, simulates a DB migration ─
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: pre-sync-migration
+  namespace: devops-training
+  annotations:
+    argocd.argoproj.io/hook: PreSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation   # delete old job before creating new
+    argocd.argoproj.io/sync-wave: "-1"                          # first thing in PreSync phase
+spec:
+  ttlSecondsAfterFinished: 120              # auto-delete pod logs after 2 minutes
+  backoffLimit: 2                           # retry twice before failing the sync
+  template:
+    metadata:
+      labels:
+        app: pre-sync-migration
+        argocd.argoproj.io/hook: PreSync
+    spec:
+      serviceAccountName: training-app-sa
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        runAsGroup: 1001
+        seccompProfile:
+          type: RuntimeDefault
+      restartPolicy: Never
+      containers:
+        - name: migrate
+          image: busybox:1.36
+          # In a real app: replace with your actual migration command
+          # e.g. ["node", "dist/migrate.js"] or ["python", "manage.py", "migrate"]
+          command:
+            - sh
+            - -c
+            - |
+              echo "=== PreSync: Running DB migrations ==="
+              echo "Checking database connection..."
+              sleep 2
+              echo "Running migrations..."
+              sleep 1
+              echo "=== Migrations complete ==="
+          resources:
+            requests:
+              memory: "32Mi"
+              cpu: "25m"
+            limits:
+              memory: "64Mi"
+              cpu: "100m"
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+---
+# ── PostSync: smoke test — curls /healthz after deployment ────
+# If this fails, ArgoCD marks sync as Failed, alerting your team.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: post-sync-smoke-test
+  namespace: devops-training
+  annotations:
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+    argocd.argoproj.io/sync-wave: "5"         # last thing to run
+spec:
+  ttlSecondsAfterFinished: 120
+  backoffLimit: 3
+  template:
+    metadata:
+      labels:
+        app: post-sync-smoke-test
+        argocd.argoproj.io/hook: PostSync
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        seccompProfile:
+          type: RuntimeDefault
+      restartPolicy: Never
+      containers:
+        - name: smoke-test
+          image: busybox:1.36
+          command:
+            - sh
+            - -c
+            - |
+              echo "=== PostSync: Running smoke tests ==="
+
+              # Wait for service to be reachable
+              echo "Waiting for app to be ready..."
+              sleep 5
+
+              # Test /healthz endpoint
+              echo "Testing /healthz..."
+              wget -qO- http://training-app-svc.devops-training.svc.cluster.local/healthz
+              if [ $? -ne 0 ]; then
+                echo "FAIL: /healthz returned non-200"
+                exit 1
+              fi
+              echo "PASS: /healthz OK"
+
+              # Test /readyz endpoint
+              echo "Testing /readyz..."
+              wget -qO- http://training-app-svc.devops-training.svc.cluster.local/readyz
+              if [ $? -ne 0 ]; then
+                echo "FAIL: /readyz returned non-200"
+                exit 1
+              fi
+              echo "PASS: /readyz OK"
+
+              echo "=== All smoke tests passed ==="
+          resources:
+            requests:
+              memory: "32Mi"
+              cpu: "25m"
+            limits:
+              memory: "64Mi"
+              cpu: "100m"
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+---
+# ── SyncFail: runs only when sync fails ───────────────────────
+# Use case: send alert, rollback, clean up partially applied resources
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: sync-fail-alert
+  namespace: devops-training
+  annotations:
+    argocd.argoproj.io/hook: SyncFail
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+spec:
+  ttlSecondsAfterFinished: 120
+  backoffLimit: 1
+  template:
+    metadata:
+      labels:
+        app: sync-fail-alert
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        seccompProfile:
+          type: RuntimeDefault
+      restartPolicy: Never
+      containers:
+        - name: alert
+          image: busybox:1.36
+          command:
+            - sh
+            - -c
+            - |
+              echo "=== SYNC FAILED ==="
+              echo "App: training-app"
+              echo "Time: $(date)"
+              echo "Action: In real setup, send Slack/PagerDuty alert here"
+              # curl -X POST $SLACK_WEBHOOK -d '{"text":"Sync failed for training-app!"}'
+          resources:
+            requests:
+              memory: "32Mi"
+              cpu: "25m"
+            limits:
+              memory: "64Mi"
+              cpu: "100m"
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]

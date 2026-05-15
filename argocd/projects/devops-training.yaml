@@ -1,0 +1,60 @@
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: devops-training
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  description: "Production training lab"
+  sourceRepos:
+    - https://github.com/rohandeb2/microservices-11.git
+  destinations:
+    - server: https://kubernetes.default.svc
+      namespace: devops-training-dev
+    - server: https://kubernetes.default.svc
+      namespace: devops-training-staging
+    - server: https://kubernetes.default.svc
+      namespace: devops-training-prod
+  clusterResourceWhitelist:
+    - group: ''
+      kind: Namespace
+    - group: 'scheduling.k8s.io'
+      kind: PriorityClass
+  namespaceResourceWhitelist:
+    - group: 'apps'
+      kind: Deployment
+    - group: 'apps'
+      kind: StatefulSet
+    - group: ''
+      kind: Service
+    - group: ''
+      kind: ConfigMap
+    - group: ''
+      kind: Secret
+    - group: ''
+      kind: ServiceAccount
+    - group: 'rbac.authorization.k8s.io'
+      kind: Role
+    - group: 'rbac.authorization.k8s.io'
+      kind: RoleBinding
+    - group: 'autoscaling'
+      kind: HorizontalPodAutoscaler
+    - group: 'policy'
+      kind: PodDisruptionBudget
+    - group: 'networking.k8s.io'
+      kind: NetworkPolicy
+    - group: ''
+      kind: ResourceQuota
+    - group: ''
+      kind: LimitRange
+  orphanedResources:
+    warn: true
+  roles:
+    - name: dev-team
+      policies:
+        - p, proj:devops-training:dev-team, applications, get, devops-training/training-app-dev, allow
+        - p, proj:devops-training:dev-team, applications, sync, devops-training/training-app-dev, allow
+    - name: platform-team
+      policies:
+        - p, proj:devops-training:platform-team, applications, *, devops-training/*, allow

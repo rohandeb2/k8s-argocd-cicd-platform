@@ -1,0 +1,175 @@
+name: CI/CD — Production Pipeline
+
+on:
+  push:
+    branches: [main, "feature/**"]
+    paths: ["app/**", "k8s/**", ".github/workflows/**"]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  IMAGE_NAME: ${{ secrets.DOCKERHUB_USERNAME }}/training-app
+
+jobs:
+  lint-and-test:
+    name: "Test [node ${{ matrix.node }}]"
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node: ["18", "20"]
+      fail-fast: true
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - run: npm ci
+      - run: npm test
+
+  security-scan:
+    name: "Security scan"
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Trivy source scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: fs
+          scan-ref: ./app
+          format: sarif
+          output: trivy-results.sarif
+          severity: CRITICAL,HIGH
+          exit-code: 0
+      - name: Upload to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: trivy-results.sarif
+
+  build-push:
+    name: "Build & push image"
+    runs-on: ubuntu-latest
+    environment: prod
+    needs: [lint-and-test, security-scan]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+    outputs:
+      short_sha: ${{ steps.vars.outputs.short_sha }}
+      image_tag: ${{ steps.vars.outputs.image_tag }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compute image tag
+        id: vars
+        run: |
+          SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
+          echo "short_sha=${SHORT_SHA}" >> $GITHUB_OUTPUT
+          echo "image_tag=sha-${SHORT_SHA}" >> $GITHUB_OUTPUT
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE_NAME }}
+          tags: |
+            type=sha,prefix=sha-,format=short
+            type=raw,value=latest
+            type=raw,value=build-${{ github.run_number }}
+      - name: Build and push multi-arch
+        id: build
+        uses: docker/build-push-action@v5
+        with:
+          context: ./app
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          provenance: true
+      - name: Scan built image
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ env.IMAGE_NAME }}:sha-${{ steps.vars.outputs.short_sha }}
+          format: table
+          severity: CRITICAL
+          exit-code: 1
+
+  update-manifests:
+    name: "Update K8s manifests"
+    runs-on: ubuntu-latest
+    needs: build-push
+    environment: prod
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GH_PAT }}
+          fetch-depth: 0
+          persist-credentials: true
+      - name: Verify token
+        run: |
+          if [ -z "${{ secrets.GH_PAT }}" ]; then
+            echo "ERROR: GH_PAT secret is not set"
+            exit 1
+          fi
+          echo "Token is set"
+      - name: Configure git
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+      - name: Install kustomize
+        run: |
+          curl -s "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh" | bash
+          sudo mv kustomize /usr/local/bin/
+      - name: Update dev tag
+        run: |
+          cd k8s/overlays/dev
+          kustomize edit set image training-app=${{ env.IMAGE_NAME }}:${{ needs.build-push.outputs.image_tag }}
+      - name: Update staging tag
+        run: |
+          cd k8s/overlays/staging
+          kustomize edit set image training-app=${{ env.IMAGE_NAME }}:${{ needs.build-push.outputs.image_tag }}
+      - name: Commit and push
+        run: |
+          git add k8s/overlays/dev/kustomization.yaml k8s/overlays/staging/kustomization.yaml
+          git diff --staged --quiet && echo "No changes" && exit 0
+          git commit -m "chore(gitops): update image to ${{ needs.build-push.outputs.image_tag }} [skip ci]"
+          git push origin main
+
+  summary:
+    name: "Pipeline summary"
+    runs-on: ubuntu-latest
+    needs: [lint-and-test, security-scan, build-push, update-manifests]
+    if: always()
+    steps:
+      - run: |
+          echo "## Pipeline Result" >> $GITHUB_STEP_SUMMARY
+          echo "| Job | Result |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Tests (node 18+20 matrix) | ${{ needs.lint-and-test.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Security scan             | ${{ needs.security-scan.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Build & push (multi-arch) | ${{ needs.build-push.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Update manifests          | ${{ needs.update-manifests.result }} |" >> $GITHUB_STEP_SUMMARY

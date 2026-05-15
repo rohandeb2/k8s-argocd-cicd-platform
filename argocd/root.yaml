@@ -1,0 +1,70 @@
+# ─────────────────────────────────────────────────────────────
+# App of Apps Pattern
+#
+# Problem it solves:
+#   Right now you run: kubectl apply -f argocd/apps/application-dev.yaml
+#                      kubectl apply -f argocd/apps/application-staging.yaml
+#                      kubectl apply -f argocd/apps/application-prod.yaml
+#   That's manual. If you add a 4th environment you have to remember to apply it.
+#
+# Solution:
+#   One "root" Application watches argocd/apps/ directory.
+#   When you add a new Application YAML to that folder and push,
+#   ArgoCD automatically creates it. Git is the only interface.
+#
+# Bootstrap (run ONCE, then never touch again):
+#   kubectl apply -f argocd/app-of-apps/root-app.yaml
+#
+# After that: adding argocd/apps/application-perf.yaml to git
+#             → ArgoCD creates training-app-perf automatically.
+# ─────────────────────────────────────────────────────────────
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: root-app
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+  labels:
+    app: root-app
+    tier: management
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/rohandeb2/microservices-11.git   # ← replace rohandeb2
+    targetRevision: main
+    path: argocd/apps                          # watches this folder for Application manifests
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd                          # Applications live in argocd namespace
+  syncPolicy:
+    automated:
+      prune: true                              # delete ArgoCD app if YAML removed from git
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+
+# ── What happens step by step ─────────────────────────────────
+# 1. kubectl apply -f argocd/app-of-apps/root-app.yaml
+# 2. ArgoCD creates "root-app" which watches argocd/apps/
+# 3. root-app finds application-dev.yaml, application-staging.yaml, application-prod.yaml
+# 4. ArgoCD creates training-app-dev, training-app-staging, training-app-prod
+# 5. Each of those apps then syncs their own k8s manifests
+#
+# To add a new environment (e.g. perf testing):
+#   cp argocd/apps/application-staging.yaml argocd/apps/application-perf.yaml
+#   edit it → change name, path, syncPolicy
+#   git add . && git commit -m "feat: add perf environment" && git push
+#   → ArgoCD automatically creates training-app-perf. No kubectl needed.
+#
+# ── ApplicationSet vs App-of-Apps ────────────────────────────
+# You already have ApplicationSet (argocd/appsets/).
+# These are DIFFERENT patterns:
+#
+# ApplicationSet → generates apps from a TEMPLATE + generator (list, matrix, git dirs)
+#                  good when all envs are identical in structure
+#
+# App-of-Apps   → each app is a SEPARATE yaml file, can be completely different
+#                  good when apps have different sources, projects, or sync policies
+#
+# In practice: use both. App-of-Apps as the root, ApplicationSet inside it.

@@ -1,0 +1,12 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: training-app-pdb
+  namespace: devops-training
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"          # WAVE 3: after deployment exists
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: training-app

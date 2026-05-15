@@ -1,0 +1,163 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: training-cache
+  namespace: devops-training
+  labels:
+    app: training-cache
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  serviceName: training-cache-headless         # must match the headless service below
+  replicas: 2
+  selector:
+    matchLabels:
+      app: training-cache
+  updateStrategy:
+    type: RollingUpdate                        # updates pod-1 first, then pod-0 (reverse order)
+    rollingUpdate:
+      partition: 0                             # set to 1 to do canary: only pod-1 updates first
+  podManagementPolicy: OrderedReady            # pod-0 must be Ready before pod-1 starts
+                                               # (use Parallel if order doesn't matter)
+  template:
+    metadata:
+      labels:
+        app: training-cache
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 999                         # redis default non-root uid
+        runAsGroup: 999
+        fsGroup: 999
+        seccompProfile:
+          type: RuntimeDefault
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: redis
+          image: redis:7-alpine
+          command:
+            - redis-server
+            - --save                           # disable AOF persistence for this demo
+            - ""
+            - --appendonly
+            - "no"
+          ports:
+            - containerPort: 6379
+              name: redis
+          resources:
+            requests:
+              memory: "32Mi"
+              cpu: "25m"
+            limits:
+              memory: "64Mi"
+              cpu: "100m"
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: data                       # PVC — each pod gets its OWN volume
+              mountPath: /data
+            - name: tmp-dir
+              mountPath: /tmp
+          livenessProbe:
+            exec:
+              command: ["redis-cli", "ping"]
+            periodSeconds: 15
+            failureThreshold: 3
+          readinessProbe:
+            exec:
+              command: ["redis-cli", "ping"]
+            periodSeconds: 10
+            failureThreshold: 2
+      volumes:
+        - name: tmp-dir
+          emptyDir: {}
+  volumeClaimTemplates:                        # ← KEY DIFFERENCE from Deployment
+    - metadata:
+        name: data                             # creates: data-training-cache-0, data-training-cache-1
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 100Mi                     # small for local dev; use Gi in prod
+        # storageClassName: standard           # Minikube's default StorageClass
+        # In prod on cloud: storageClassName: gp3 (AWS), premium-rwo (GKE), etc.
+---
+# Headless service — gives each pod a stable DNS name
+# training-cache-0.training-cache-headless.devops-training.svc.cluster.local
+# training-cache-1.training-cache-headless.devops-training.svc.cluster.local
+# This is how pods in a StatefulSet find each other (leader election, replication, etc.)
+apiVersion: v1
+kind: Service
+metadata:
+  name: training-cache-headless
+  namespace: devops-training
+  labels:
+    app: training-cache
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"          # service before statefulset
+spec:
+  clusterIP: None                              # "None" = headless; no load balancing
+  selector:
+    app: training-cache
+  ports:
+    - name: redis
+      port: 6379
+      targetPort: 6379
+---
+# Regular service for clients that just want to talk to any cache pod
+apiVersion: v1
+kind: Service
+metadata:
+  name: training-cache-svc
+  namespace: devops-training
+  labels:
+    app: training-cache
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  selector:
+    app: training-cache
+  ports:
+    - name: redis
+      port: 6379
+      targetPort: 6379
+  type: ClusterIP
+
+# ── What StatefulSet teaches vs Deployment ────────────────────
+#
+# Deployment pod names:  training-app-7d9f8b-xkq2p  (random suffix, changes on restart)
+# StatefulSet pod names: training-cache-0            (stable, predictable, permanent)
+#
+# Deployment PVCs:       shared or none
+# StatefulSet PVCs:      each pod gets its OWN PVC that follows it across restarts
+#
+# Deployment startup:    all pods start simultaneously
+# StatefulSet startup:   pod-0 → Ready → pod-1 → Ready (ordered)
+#
+# Deployment deletion:   all pods deleted simultaneously
+# StatefulSet deletion:  pod-1 deleted → pod-0 deleted (reverse order)
+#
+# Use StatefulSet for: databases, Redis clusters, Kafka, Zookeeper,
+#                      anything needing stable identity or per-pod storage
+#
+# ── Practice exercises ────────────────────────────────────────
+# 1. kubectl get pods -n devops-training -l app=training-cache -w
+#    Watch them come up one by one (ordered)
+#
+# 2. kubectl get pvc -n devops-training
+#    See: data-training-cache-0 and data-training-cache-1 (separate PVCs)
+#
+# 3. kubectl delete pod training-cache-0 -n devops-training
+#    Watch it restart with the SAME name and SAME PVC (data survives)
+#
+# 4. kubectl exec -it training-cache-0 -n devops-training -- redis-cli
+#    SET mykey "hello"
+#    kubectl delete pod training-cache-0 -n devops-training
+#    kubectl exec -it training-cache-0 -n devops-training -- redis-cli GET mykey
+#    → still "hello" because PVC persisted
+#
+# 5. kubectl exec -it training-cache-0 -- nslookup training-cache-headless.devops-training.svc.cluster.local
+#    See both pod IPs resolved by DNS

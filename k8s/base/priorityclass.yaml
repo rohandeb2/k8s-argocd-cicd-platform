@@ -1,0 +1,41 @@
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: training-app-high
+  # No namespace — PriorityClass is cluster-scoped
+  annotations:
+    argocd.argoproj.io/sync-wave: "-3"         # must exist before any pod is scheduled
+value: 1000
+globalDefault: false
+preemptionPolicy: PreemptLowerPriority         # will evict lower-priority pods if node is full
+description: >
+  High priority — used by prod/staging pods.
+  These pods will evict dev-priority pods if the node runs out of resources.
+---
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: training-app-low
+  annotations:
+    argocd.argoproj.io/sync-wave: "-3"
+value: 100
+globalDefault: false
+preemptionPolicy: Never                        # won't preempt others; gets evicted first
+description: >
+  Low priority — used by dev pods.
+  Evicted first when the node is under memory/CPU pressure.
+
+# ── How to use ────────────────────────────────────────────────
+# In your deployment/overlay, add this under spec.template.spec:
+#
+#   priorityClassName: training-app-high    ← staging + prod overlay
+#   priorityClassName: training-app-low     ← dev overlay
+#
+# k8s/base/deployment.yaml already has priorityClassName: training-app-high
+# k8s/overlays/dev/kustomization.yaml patches it to training-app-low
+#
+# ── What this teaches ─────────────────────────────────────────
+# When Minikube runs low on memory, K8s will kill the dev pod
+# to free up resources for the prod/staging pod.
+# This is critical in shared clusters — dev workloads must never
+# starve production.

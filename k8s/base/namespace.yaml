@@ -1,0 +1,38 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: devops-training
+  labels:
+    managed-by: argocd
+    team: platform
+---
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: devops-training-quota
+  namespace: devops-training
+spec:
+  hard:
+    requests.cpu: "2"
+    requests.memory: 2Gi
+    limits.cpu: "4"
+    limits.memory: 4Gi
+    pods: "20"
+---
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: devops-training-limits
+  namespace: devops-training
+spec:
+  limits:
+    - type: Container
+      default:
+        cpu: "200m"
+        memory: "128Mi"
+      defaultRequest:
+        cpu: "50m"
+        memory: "64Mi"
+      max:
+        cpu: "1"
+        memory: "512Mi"
