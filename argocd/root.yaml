@@ -31,7 +31,7 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: https://github.com/rohandeb2/microservices-11.git   # ← replace rohandeb2
+    repoURL: https://github.com/rohandeb2/k8s_argocd_project.git   # ← replace rohandeb2
     targetRevision: main
     path: argocd/apps                          # watches this folder for Application manifests
   destination:

@@ -10,7 +10,7 @@ metadata:
 spec:
   project: devops-training
   source:
-    repoURL: https://github.com/rohandeb2/microservices-11.git
+    repoURL: https://github.com/rohandeb2/k8s_argocd_project.git
     targetRevision: main
     path: k8s/overlays/dev
   destination:

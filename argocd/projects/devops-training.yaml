@@ -8,7 +8,7 @@ metadata:
 spec:
   description: "Production training lab"
   sourceRepos:
-    - https://github.com/rohandeb2/microservices-11.git
+    - https://github.com/rohandeb2/k8s_argocd_project.git
   destinations:
     - server: https://kubernetes.default.svc
       namespace: devops-training-dev

@@ -29,7 +29,7 @@ spec:
       project: devops-training
       source:
         path: k8s/overlays/{{environment}}
-        repoURL: https://github.com/rohandeb2/microservices-11.git
+        repoURL: https://github.com/rohandeb2/k8s_argocd_project.git
         targetRevision: '{{revision}}'
       syncPolicy:
         automated:
