@@ -25,7 +25,7 @@ The platform covers:
 
 ## Architecture
 
-![Architecture Diagram](./img/architecture.png)
+![Architecture Diagram](./img/0.png)
 
 ---
 
