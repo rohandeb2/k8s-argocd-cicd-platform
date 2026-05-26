@@ -1,528 +1,273 @@
-# DevOps Training Lab — Complete Guide
-### Kubernetes · ArgoCD · GitHub Actions | Zero Cost Local → Cloud
+# k8s-argocd-cicd-platform
+
+> A production-grade Kubernetes platform implementing GitOps principles using ArgoCD, GitHub Actions, and Kustomize — featuring multi-environment deployment automation, zero-trust security hardening, autoscaling, and self-healing infrastructure.
+
+![CI/CD](https://img.shields.io/github/actions/workflow/status/rohandeb2/k8s-argocd-cicd-platform/ci-cd.yaml?label=CI%2FCD&style=flat-square)
+![Kubernetes](https://img.shields.io/badge/Kubernetes-1.29-326CE5?style=flat-square&logo=kubernetes&logoColor=white)
+![ArgoCD](https://img.shields.io/badge/ArgoCD-GitOps-EF7B4D?style=flat-square&logo=argo&logoColor=white)
+![Docker](https://img.shields.io/badge/Docker-multi--arch-2496ED?style=flat-square&logo=docker&logoColor=white)
 
 ---
 
-## 🗺️ What You Are Building
+## Overview
 
-```
-Your Code (GitHub)
-      │
-      │  git push
-      ▼
-GitHub Actions CI/CD
-  ├── Run tests
-  ├── Build Docker image → push to Docker Hub
-  └── Update image tag in k8s/overlays/dev & staging
-              │
-              │  Git commit detected
-              ▼
-         ArgoCD (GitOps)
-    ┌─────────┼──────────┐
-    ▼         ▼          ▼
-  dev      staging     prod
-(auto)     (auto)    (manual approval)
-    └─────────┼──────────┘
-              ▼
-     Kubernetes Cluster (Minikube locally)
-```
+This platform automates the full software delivery lifecycle — from code push to production deployment — using GitOps as the core principle. Git is the single source of truth. No one touches the cluster directly.
 
-**One push to main → your app is live on dev+staging automatically. Prod needs your click.**
+The platform covers:
+- **CI** via GitHub Actions — test, scan, build, push
+- **CD** via ArgoCD — Git-driven, self-healing deployments
+- **Multi-environment promotion** — dev → staging → prod using Kustomize overlays
+- **Security hardening** — zero-trust networking, non-root containers, RBAC, dropped capabilities
+- **Autoscaling** — HPA for traffic spikes, VPA for resource optimization
+- **High availability** — anti-affinity, topology spread, PodDisruptionBudget
 
 ---
 
-## 📦 Prerequisites — Install These First
+## Architecture
 
-| Tool | Purpose | Install |
-|------|---------|---------|
-| Docker Desktop | Run containers | https://docker.com/products/docker-desktop |
-| minikube | Local K8s cluster | `brew install minikube` (Mac) or https://minikube.sigs.k8s.io |
-| kubectl | Talk to K8s | `brew install kubectl` |
-| git | Version control | Already installed usually |
-| VS Code | Code editor | https://code.visualstudio.com |
-
-**Free accounts needed:**
-- GitHub account (free)
-- Docker Hub account (free) — for storing your images
+![Architecture Diagram](./img/architecture.png)
 
 ---
 
-## 📁 Project Structure Explained
+## Tech Stack
+
+| Tool | Role |
+|------|------|
+| Kubernetes | Container orchestration |
+| ArgoCD | GitOps continuous delivery |
+| GitHub Actions | CI/CD pipeline automation |
+| Kustomize | Multi-environment manifest management |
+| Docker | Multi-arch containerization |
+| Trivy | Security vulnerability scanning |
+| Prometheus | Metrics & observability |
+| Redis (StatefulSet) | Stateful workload demonstration |
+
+---
+
+## Repository Structure
 
 ```
-devops-training-lab/
-├── app/                          ← Your Node.js application
-│   ├── src/index.js              ← App code
-│   ├── package.json
-│   └── Dockerfile                ← Multi-stage, non-root, production-grade
+├──.github/
+|    └── workflows/
+|        └── ci-cd.yaml            # Full CI/CD pipeline definition
 │
-├── k8s/                          ← All Kubernetes manifests
-│   ├── base/                     ← Shared config (DRY principle)
-│   │   ├── deployment.yaml       ← Production-grade: probes, limits, security
-│   │   ├── service.yaml
-│   │   ├── configmap.yaml
-│   │   ├── hpa.yaml              ← Auto-scales 2→5 pods on CPU/memory
-│   │   ├── pdb.yaml              ← Never kills last pod during updates
+├── k8s/
+│   ├── base/                     # Environment-agnostic base manifests
+│   │   ├── deployment.yaml       # Hardened deployment with probes and lifecycle
+│   │   ├── service.yaml          # ClusterIP service
+│   │   ├── hpa.yaml              # Horizontal Pod Autoscaler (CPU + memory)
+│   │   ├── vpa.yaml              # Vertical Pod Autoscaler (recommendation mode)
+│   │   ├── pdb.yaml              # Pod Disruption Budget
+│   │   ├── networkpolicy.yaml    # Default-deny + explicit allow rules
+│   │   ├── serviceaccount.yaml   # Least-privilege RBAC
+│   │   ├── statefulset.yaml      # Redis StatefulSet with per-pod PVCs
+│   │   ├── priorityclass.yaml    # High/low priority classes
+│   │   ├── namespace.yaml        # Namespace + ResourceQuota + LimitRange
 │   │   └── kustomization.yaml
+│   │
 │   └── overlays/
-│       ├── dev/                  ← Dev-specific overrides (1 replica)
-│       ├── staging/              ← Staging overrides (2 replicas)
-│       └── prod/                 ← Prod overrides (3 replicas, manual sync)
+│       ├── dev/                  # 1 replica · debug logs · automated sync
+│       ├── staging/              # 2 replicas · info logs · automated sync
+│       └── prod/                 # 3 replicas · warn logs · manual sync
 │
 ├── argocd/
-│   ├── projects/devops-training.yaml              ← RBAC: who can deploy where
-│   ├── application-dev.yaml      ← ArgoCD watches k8s/overlays/dev
-│   ├── application-staging.yaml
-│   └── application-prod.yaml     ← Manual sync only!
-│
-├── .github/workflows/
-│   └── ci-cd.yaml                ← Full CI/CD pipeline
-│
-└── scripts/
-    ├── setup.sh                  ← One-time cluster bootstrap
-    └── helpers.sh                ← Useful shortcuts
+│   ├── root.yaml                 # App of Apps — single bootstrap entry point
+│   ├── projects/                 # AppProject — source, destination, RBAC boundaries
+│   ├── apps/                     # Per-environment Application manifests
+│   └── appsets/                  # ApplicationSet + PreSync/PostSync/SyncFail hooks
+|
+├── app/                          # Node.js Express application
+    ├── src/index.js              # App with health, readiness, metrics endpoints
+    ├── Dockerfile                # Multi-stage, non-root, hardened image
+    └── package.json
 ```
 
 ---
 
-## 🚀 DAY 1 — Setup (Do This Once)
+## CI/CD Pipeline
 
-### Step 1 — Unzip and go to the project
-
-```bash
-unzip devops-training-lab.zip
-cd devops-training-lab
+```
+Push to main
+      │
+      ├── lint-and-test ──────── Node 18 + Node 20 matrix
+      │                          npm ci + npm test
+      │
+      ├── security-scan ──────── Trivy: filesystem scan (source code)
+      │                          Trivy: image scan (rohan700/training-app:latest)
+      │                          Results uploaded to GitHub Security tab
+      │
+      └── build-push ─────────── Triggered only on: push to main
+            │                    Multi-arch build: linux/amd64 + linux/arm64
+            │                    Tags: sha-<commit>, latest, build-<run_number>
+            │                    Post-build Trivy scan — blocks on CRITICAL CVEs
+            │
+            └── update-manifests
+                  │              Updates image tag in k8s/overlays/dev + staging
+                  │              Commits with [skip ci] to prevent loop
+                  │              Pushes to main
+                  │
+                  └── ArgoCD detects git change → deploys to cluster
 ```
 
-### Step 2 — Create your GitHub repository
-
-1. Go to https://github.com/new
-2. Name it: `devops-training-lab`
-3. Set to **Public** (ArgoCD will pull from it)
-4. Do NOT add README (you already have files)
-
-```bash
-# Initialize git and push
-git init
-git add .
-git commit -m "feat: initial devops training lab setup"
-git branch -M main
-git remote add origin https://github.com/YOUR_USERNAME/devops-training-lab.git
-git push -u origin main
-```
-
-### Step 3 — Update YOUR username in config files
-
-Search and replace `YOUR_USERNAME` and `your-dockerhub-username` in these files:
-
-```bash
-# On Mac/Linux:
-grep -r "YOUR_USERNAME\|your-dockerhub-username" . --include="*.yaml" --include="*.yml"
-```
-
-Files to update:
-- `k8s/overlays/dev/kustomization.yaml` → your Docker Hub username
-- `k8s/overlays/staging/kustomization.yaml` → same
-- `k8s/overlays/prod/kustomization.yaml` → same
-- `argocd/projects/devops-training.yaml` → your GitHub username
-- `argocd/application-dev.yaml` → your GitHub username
-- `argocd/application-staging.yaml` → same
-- `argocd/application-prod.yaml` → same
-
-Then push the changes:
-```bash
-git add .
-git commit -m "chore: set my username in configs"
-git push
-```
-
-### Step 4 — Run the setup script
-
-```bash
-chmod +x scripts/setup.sh
-./scripts/setup.sh
-```
-
-This will:
-- Start a Minikube cluster
-- Install ArgoCD
-- Print your ArgoCD password
-
-**Save the password it prints!**
-
-### Step 5 — Verify cluster is running
-
-```bash
-kubectl get nodes
-# Should show: minikube   Ready   ...
-
-kubectl get pods -n argocd
-# Should show argocd-server, argocd-repo-server, etc. all Running
-```
-
-### Step 6 — Open ArgoCD UI
-
-```bash
-kubectl port-forward svc/argocd-server -n argocd 8080:443
-```
-
-Open your browser: **https://localhost:8080**
-- Username: `admin`
-- Password: (from setup script output)
-
-Accept the self-signed certificate warning.
-
-### Step 7 — Apply ArgoCD Project and Applications
-
-```bash
-# Create the ArgoCD project (RBAC rules)
-kubectl apply -f argocd/projects/devops-training.yaml
-
-# Create the three applications (dev, staging, prod)
-kubectl apply -f argocd/application-dev.yaml
-kubectl apply -f argocd/application-staging.yaml
-kubectl apply -f argocd/application-prod.yaml
-```
-
-Go to ArgoCD UI → you will see 3 apps. They will show "OutOfSync" initially.
-
-### Step 8 — Set up GitHub Actions Secrets
-
-Go to your GitHub repo → Settings → Secrets and variables → Actions → New repository secret
-
-| Secret Name | Value |
-|-------------|-------|
-| `DOCKERHUB_USERNAME` | your Docker Hub username |
-| `DOCKERHUB_TOKEN` | Docker Hub access token (not password) |
-| `GH_PAT` | GitHub Personal Access Token |
-
-**How to get Docker Hub token:**
-1. hub.docker.com → Account Settings → Security → New Access Token
-2. Name: `github-actions`, Permission: Read/Write
-
-**How to get GitHub PAT:**
-1. github.com → Settings → Developer settings → Personal access tokens → Fine-grained tokens
-2. Select your repo → Permissions: Contents (Read and Write), Workflows (Read and Write)
+**Pipeline design decisions:**
+- Tests run in parallel on Node 18 and 20 — `fail-fast: true` cancels sibling on first failure
+- Security scan runs in parallel with tests — does not block build if low/medium CVEs found
+- Build only runs on `push` to `main` — never on pull requests
+- Pipeline never applies to cluster directly — only updates Git (GitOps)
+- `[skip ci]` on manifest commit prevents infinite pipeline loop
 
 ---
 
-## 🔄 DAY 2 — Your First Deployment
+## GitOps with ArgoCD
 
-### Step 9 — Build and push your first Docker image manually
+### App of Apps Pattern
 
-```bash
-cd app
+One root application manages all environments. Bootstrap once — never touch again.
 
-# Log in to Docker Hub
-docker login
-
-# Build the image
-docker build -t YOUR_DOCKERHUB_USERNAME/training-app:v1.0.0 .
-
-# Push it
-docker push YOUR_DOCKERHUB_USERNAME/training-app:v1.0.0
-
-# Also tag as latest
-docker tag YOUR_DOCKERHUB_USERNAME/training-app:v1.0.0 \
-           YOUR_DOCKERHUB_USERNAME/training-app:latest
-docker push YOUR_DOCKERHUB_USERNAME/training-app:latest
-
-cd ..
+```
+kubectl apply -f argocd/root.yaml
 ```
 
-### Step 10 — Sync ArgoCD manually (first time)
-
-In the ArgoCD UI:
-1. Click on `training-app-dev`
-2. Click **SYNC** → **SYNCHRONIZE**
-3. Watch pods appear!
-
-Or from the terminal:
-```bash
-# Install ArgoCD CLI
-brew install argocd   # Mac
-# Or: https://argo-cd.readthedocs.io/en/stable/cli_installation/
-
-# Login
-argocd login localhost:8080 --username admin --password YOUR_PASSWORD --insecure
-
-# Sync dev app
-argocd app sync training-app-dev
+```
+root-app  (watches argocd/apps/)
+    ├── training-app-dev      → k8s/overlays/dev      (automated sync)
+    ├── training-app-staging  → k8s/overlays/staging   (automated sync)
+    └── training-app-prod     → k8s/overlays/prod      (manual sync — safer for prod)
 ```
 
-### Step 11 — Verify your app is running
+Adding a new environment is as simple as adding a new `application-perf.yaml` to `argocd/apps/` and pushing to Git. ArgoCD creates it automatically.
 
-```bash
-kubectl get pods -n devops-training
-# NAME                            READY   STATUS    RESTARTS   AGE
-# training-app-xxxxx-yyy          1/1     Running   0          30s
+### Sync Hooks
 
-# Access the app
-kubectl port-forward svc/training-app-svc -n devops-training 3001:80
-```
+| Hook | When it runs | What it does |
+|------|-------------|--------------|
+| PreSync | Before any resource is applied | Runs DB migration job |
+| PostSync | After all resources are healthy | Smoke tests `/healthz` and `/readyz` |
+| SyncFail | Only when sync fails | Sends alert (Slack/PagerDuty in production) |
 
-Open: **http://localhost:3001**
-You should see:
-```json
-{
-  "message": "Hello from DevOps Training App!",
-  "version": "v1.0.0-dev",
-  "environment": "dev",
-  "hostname": "training-app-xxxxx"
-}
-```
+If any hook fails → ArgoCD marks the entire sync as Failed. Nothing broken reaches the cluster.
 
-**🎉 Your app is running on Kubernetes!**
+### Self-Healing
+
+If someone manually changes a resource in the cluster, ArgoCD detects the drift and reverts it back to the Git state within seconds.
+
+### AppProject Boundaries
+
+The `devops-training` AppProject enforces:
+- Only this repository can be used as source
+- Deployments only allowed to `devops-training-dev`, `devops-training-staging`, `devops-training-prod`
+- Only whitelisted resource types can be created (Deployment, Service, HPA, etc.)
+- `dev-team` can only view and sync dev environment
+- `platform-team` has full access to all environments
 
 ---
 
-## ⚙️ DAY 3 — GitOps in Action (The Magic)
+## Kubernetes Platform Features
 
-### Make a code change and watch everything flow automatically
+### Security Hardening
 
-```bash
-# Edit the app message
-# Open app/src/index.js and change "Hello from DevOps Training App!"
-# to "Hello from DevOps Training App! - Updated v2!"
+Every workload follows defense-in-depth:
+
+```yaml
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 1001
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop: ["ALL"]
+  seccompProfile:
+    type: RuntimeDefault
 ```
 
-Push the change:
-```bash
-git add .
-git commit -m "feat: update welcome message"
-git push
-```
+- **Zero-trust NetworkPolicy** — default-deny-all, explicit allow only for required ports
+- **RBAC least privilege** — ServiceAccount can only `get` and `list` ConfigMaps
+- **No hardcoded secrets** — injected via Kubernetes Secrets as env vars
 
-Now watch what happens automatically:
+### Autoscaling
 
-1. **GitHub Actions triggers** → go to github.com/YOUR_USERNAME/devops-training-lab → Actions tab
-2. **Test job** runs
-3. **Build job** builds Docker image, pushes to Docker Hub
-4. **Update manifest job** edits `k8s/overlays/dev/kustomization.yaml` with the new image tag and commits it
-5. **ArgoCD detects** the git change (polls every 3 minutes by default)
-6. **ArgoCD syncs** the new image to your cluster
-7. **Rolling update** — old pods replaced one by one, zero downtime
+| Scaler | Trigger | Behavior |
+|--------|---------|---------|
+| HPA | CPU > 60% or Memory > 70% | Scale up: 2 pods/30s · Scale down: 1 pod/60s (5min stabilization) |
+| VPA | Actual vs requested resource usage | Recommendation mode — informs right-sizing without restarts |
 
-**This is GitOps — Git is the single source of truth!**
+VPA and HPA work together: VPA recommends correct resource requests → HPA scales accurately based on real utilization percentages.
 
-### Watch the rolling update live:
+### High Availability
 
-```bash
-watch kubectl get pods -n devops-training
-```
+- **Pod Anti-Affinity** — pods prefer different nodes (prevents single node failure taking down all replicas)
+- **TopologySpreadConstraints** — balances pod count evenly across nodes (`maxSkew: 1`)
+- **PodDisruptionBudget** — minimum 1 pod always available during node drains or cluster upgrades
+- **Rolling update** — `maxSurge: 1`, `maxUnavailable: 0` — zero downtime deployments
+- **Graceful shutdown** — `preStop: sleep 5` + `terminationGracePeriodSeconds: 60`
 
-You'll see new pods come up before old ones terminate. That's `maxUnavailable: 0` in action.
+### Multi-Environment with Kustomize
+
+Base manifests define the full configuration once. Overlays only patch what differs.
+
+| Configuration | dev | staging | prod |
+|---------------|-----|---------|------|
+| Replicas | 1 | 2 | 3 |
+| Log level | debug | info | warn |
+| Image pull policy | IfNotPresent | IfNotPresent | Always |
+| ArgoCD sync | Automated | Automated | Manual |
+| HPA min replicas | 1 | 2 | 2 |
+
+### StatefulSet — Redis
+
+Demonstrates stateful workload management:
+- Stable pod names: `training-cache-0`, `training-cache-1`
+- Per-pod PVCs: `data-training-cache-0`, `data-training-cache-1`
+- Ordered startup (pod-0 ready before pod-1 starts)
+- Headless service for stable DNS per pod
+- Canary-capable via `partition` field
 
 ---
 
-## 🔬 DAY 4 — Kubernetes Deep Dive
+## Deployment Guide
 
-### Concept 1: Probes (how K8s knows your app is alive)
-
-```bash
-# See probe configuration
-kubectl describe deployment training-app -n devops-training | grep -A 20 "Liveness\|Readiness"
-
-# Kill the health endpoint (simulate app crash) — watch K8s restart it
-kubectl exec -it $(kubectl get pod -n devops-training -l app=training-app -o name | head -1) \
-  -n devops-training -- kill 1
-  
-# Watch it restart automatically
-kubectl get pods -n devops-training -w
-```
-
-### Concept 2: Resource limits
+### Prerequisites
 
 ```bash
-# See resource usage per pod
-kubectl top pods -n devops-training
-
-# See limits configured
-kubectl describe pod -n devops-training -l app=training-app | grep -A 5 "Limits\|Requests"
+docker --version    # Docker Desktop
+kubectl version     # kubectl CLI
+minikube version    # Minikube
 ```
 
-### Concept 3: HPA (Auto-scaling)
+## Application Endpoints
 
-```bash
-# Check HPA status
-kubectl get hpa -n devops-training
-
-# Watch it scale (you'd need to add load for this to trigger)
-kubectl describe hpa training-app-hpa -n devops-training
-```
-
-### Concept 4: PodDisruptionBudget
-
-```bash
-# Check PDB — ensures at least 1 pod is always alive
-kubectl get pdb -n devops-training
-kubectl describe pdb training-app-pdb -n devops-training
-```
-
-### Concept 5: Drift detection (ArgoCD self-heal)
-
-```bash
-# Manually scale to 5 replicas (not in Git!)
-kubectl scale deployment training-app -n devops-training --replicas=5
-
-# Watch pods go to 5
-kubectl get pods -n devops-training
-
-# Wait ~3 minutes... ArgoCD will detect the drift and scale back to what Git says
-kubectl get pods -n devops-training -w
-# Observe: it goes back to the replica count in your kustomization overlay
-```
-
-**This is why self-healing is critical in production — no one can manually change production state without going through Git.**
+| Endpoint | Probe type | Description |
+|----------|-----------|-------------|
+| `GET /` | — | App info: version, env, hostname |
+| `GET /healthz` | Liveness | Is the process alive? |
+| `GET /readyz` | Readiness | Is the app ready to serve traffic? |
+| `GET /startupz` | Startup | Has the app finished initializing? |
+| `GET /metrics` | — | Prometheus-compatible metrics |
 
 ---
 
-## 🛡️ DAY 5 — ArgoCD Advanced Concepts
+## Production Considerations
 
-### Manual Production Deploy (with approval)
+This platform runs on Minikube for local demonstration. For a production deployment:
 
-Dev and staging sync automatically. Production requires human approval.
-
-```bash
-# Check prod app status
-argocd app get training-app-prod
-
-# When you're ready to promote to prod, update prod overlay to use same tag
-# Edit k8s/overlays/prod/kustomization.yaml → change newTag to the sha you want
-# Commit and push
-
-# Then in ArgoCD UI, click training-app-prod → SYNC
-# Or via CLI:
-argocd app sync training-app-prod
-```
-
-### Rollback in ArgoCD
-
-```bash
-# See deployment history
-argocd app history training-app-dev
-
-# Roll back to previous version
-argocd app rollback training-app-dev 1
-# (1 is the revision number from history)
-```
-
-### Watch sync status
-
-```bash
-# Check all apps at once
-kubectl get applications -n argocd
-
-# Detailed status of one app
-argocd app get training-app-dev
-```
+| Area | Recommendation |
+|------|---------------|
+| Cluster | Replace Minikube with EKS / GKE / AKS |
+| Secrets | Use AWS Secrets Manager, HashiCorp Vault, or Sealed Secrets |
+| VPA | Switch from `Off` to `Auto` mode after establishing resource baselines |
+| ArgoCD | Enable SSO (Dex + OIDC) instead of admin password |
+| Image registry | Use ECR or GCR instead of DockerHub for private images |
+| Monitoring | Add Prometheus + Grafana stack for full observability |
+| Ingress | Add NGINX or AWS ALB Ingress Controller with TLS |
 
 ---
+## Proof of work:
+![Proof of Work](./img/Deployed.png)
 
-## 🐛 Troubleshooting
+## Author
 
-### ArgoCD shows OutOfSync
-
-```bash
-argocd app sync training-app-dev --force
-```
-
-### Pod stuck in Pending
-
-```bash
-kubectl describe pod POD_NAME -n devops-training
-# Look at "Events" section at the bottom — it tells you why
-```
-
-### Image pull error
-
-```bash
-# Check if Docker Hub image exists
-docker pull YOUR_DOCKERHUB_USERNAME/training-app:latest
-
-# Make sure the image name in kustomization.yaml exactly matches
-```
-
-### ArgoCD can't reach GitHub
-
-```bash
-# Add your repo manually in ArgoCD
-argocd repo add https://github.com/YOUR_USERNAME/devops-training-lab.git \
-  --username YOUR_USERNAME \
-  --password YOUR_GITHUB_PAT
-```
-
-### Minikube out of memory
-
-```bash
-minikube stop
-minikube start --driver=docker --cpus=4 --memory=6144 --profile=devops-lab
-```
+**Rohan** — DevOps Engineer  
+GitHub: [@rohandeb2](https://github.com/rohandeb2)  
+email: ruhondeb28@gmail.com
 
 ---
-
-## 🚀 Moving to the Cloud (Next Phase)
-
-When you're ready to move from local to cloud (zero cost options):
-
-| Option | Cost | Notes |
-|--------|------|-------|
-| GKE Autopilot | Free tier | $0 for small clusters |
-| k3s on a free VPS (Oracle Cloud free tier) | Free | Oracle gives 2 ARM VMs free forever |
-| EKS via AWS free tier | Limited | Only 750hrs t3.micro |
-| Civo (managed K3s) | $5/mo | Cheapest managed K8s |
-
-**Everything in this lab works identically on cloud — just change the kubeconfig.**
-
----
-
-## 📚 Production Concepts You've Practiced
-
-| Concept | Where |
-|---------|-------|
-| Multi-stage Docker build | `app/Dockerfile` |
-| Non-root container user | `app/Dockerfile` |
-| ReadOnlyRootFilesystem | `k8s/base/deployment.yaml` |
-| Liveness + Readiness probes | `k8s/base/deployment.yaml` |
-| CPU + Memory resource limits | `k8s/base/deployment.yaml` |
-| Pod Anti-Affinity (spread across nodes) | `k8s/base/deployment.yaml` |
-| Rolling update with zero downtime | `k8s/base/deployment.yaml` |
-| HPA (auto-scale on CPU/memory) | `k8s/base/hpa.yaml` |
-| PodDisruptionBudget | `k8s/base/pdb.yaml` |
-| Kustomize overlays (DRY config) | `k8s/overlays/` |
-| GitOps with ArgoCD | `argocd/` |
-| Drift detection + self-healing | ArgoCD automated syncPolicy |
-| Manual prod approval gate | `argocd/application-prod.yaml` |
-| RBAC via ArgoCD Projects | `argocd/projects/devops-training.yaml` |
-| CI pipeline with test → build → push | `.github/workflows/ci-cd.yaml` |
-| Image tag update via kustomize in CI | `.github/workflows/ci-cd.yaml` |
-| Pipeline concurrency control | `.github/workflows/ci-cd.yaml` |
-| Docker layer caching in CI | `.github/workflows/ci-cd.yaml` |
-| GitHub Actions job dependencies | `.github/workflows/ci-cd.yaml` |
-
----
-
-## 💡 Daily Practice Commands (Bookmark These)
-
-```bash
-# Source helpers for shortcuts
-source scripts/helpers.sh
-
-# Open ArgoCD UI
-argocd-ui
-
-# Get ArgoCD password
-argocd-pass
-
-# Open your app in browser
-app-open
-
-# Watch pods live
-watch-pods
-
-# Check all ArgoCD apps
-argo-status
-
-# Simulate a deploy restart
-rollout-restart
-```
