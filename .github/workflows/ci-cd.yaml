@@ -145,8 +145,8 @@ jobs:
           echo "Token is set"
       - name: Configure git
         run: |
-          git config user.name  "<enter your github username>"
-          git config user.email "<enter your github email>"
+          git config user.name  rohandeb2
+          git config user.email ayushmanndeb8@gmail.com
 
       - name: Install kustomize
         run: |
