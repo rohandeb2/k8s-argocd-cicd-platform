@@ -4,7 +4,7 @@ metadata:
   name: training-app-pdb
   namespace: devops-training
   annotations:
-    argocd.argoproj.io/sync-wave: "3"          # WAVE 3: after deployment exists
+    argocd.argoproj.io/sync-wave: "3"          
 spec:
   minAvailable: 1
   selector:

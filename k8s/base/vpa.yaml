@@ -4,7 +4,7 @@ metadata:
   name: training-app-vpa
   namespace: devops-training
   annotations:
-    argocd.argoproj.io/sync-wave: "3"          # after deployment exists
+    argocd.argoproj.io/sync-wave: "3"          
 spec:
   targetRef:
     apiVersion: apps/v1
@@ -13,49 +13,15 @@ spec:
 
   updatePolicy:
     updateMode: "Off"
-    # "Off"      → only recommend, never change anything (start here, learn first)
-    # "Initial"  → only sets requests on new pods, never restarts existing ones
-    # "Auto"     → automatically adjusts and restarts pods (use in prod after tuning)
 
   resourcePolicy:
     containerPolicies:
       - containerName: training-app
         minAllowed:
-          cpu: 25m                             # never recommend below this
+          cpu: 25m                             
           memory: 32Mi
         maxAllowed:
-          cpu: 500m                            # never recommend above this
+          cpu: 500m                           
           memory: 256Mi
         controlledResources: ["cpu", "memory"]
-        controlledValues: RequestsAndLimits    # adjust both requests and limits together
-
-# ── Install VPA (add to setup.sh) ─────────────────────────────
-# VPA ships as an addon in Minikube:
-#   minikube addons enable vpa
-#
-# Or install manually:
-#   git clone https://github.com/kubernetes/autoscaler.git
-#   cd autoscaler/vertical-pod-autoscaler
-#   ./hack/vpa-up.sh
-#
-# ── How to read VPA recommendations ──────────────────────────
-# After your app runs under real load for ~10 minutes:
-#   kubectl describe vpa training-app-vpa -n devops-training
-#
-# You will see output like:
-#   Recommendation:
-#     Container Recommendations:
-#       Container Name: training-app
-#         Lower Bound:    cpu: 20m,  memory: 52Mi
-#         Target:         cpu: 35m,  memory: 68Mi   ← use these in deployment.yaml
-#         Upper Bound:    cpu: 120m, memory: 140Mi
-#
-# "Target" is what VPA thinks your actual requests should be.
-# Compare with what you have in deployment.yaml (cpu: 50m, memory: 64Mi)
-# and tune accordingly.
-#
-# ── VPA + HPA together ───────────────────────────────────────
-# Never use VPA "Auto" mode with HPA on the same metric (CPU/memory).
-# They fight each other. Safe combinations:
-#   VPA "Off"  + HPA on CPU/memory  ← current setup (recommended for learning)
-#   VPA "Auto" + HPA on custom metric (e.g. request rate via KEDA)
+        controlledValues: RequestsAndLimits    

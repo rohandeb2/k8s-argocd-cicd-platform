@@ -10,7 +10,7 @@ metadata:
 spec:
   project: devops-training
   source:
-    repoURL: https://github.com/rohandeb2/k8s_argocd_project.git
+    repoURL: https://github.com/rohandeb2/k8s-argocd-cicd-platform.git
     targetRevision: main
     path: k8s/overlays/dev
   destination:

@@ -6,7 +6,7 @@ metadata:
   labels:
     app: training-app
   annotations:
-    argocd.argoproj.io/sync-wave: "1"          # WAVE 1: service before deployment
+    argocd.argoproj.io/sync-wave: "1"         
 spec:
   selector:
     app: training-app

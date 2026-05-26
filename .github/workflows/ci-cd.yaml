@@ -57,7 +57,7 @@ jobs:
       - name: Run Trivy scan
         uses: aquasecurity/trivy-action@master
         with:
-          image-ref: rohan700/training-app:latest
+          image-ref: rohan700/training-app:latest  # use specific tag or digest (best practice)
           format: sarif
           output: trivy-results.sarif
 
@@ -114,6 +114,7 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
           provenance: true
+
       - name: Scan built image
         uses: aquasecurity/trivy-action@master
         with:
@@ -144,20 +145,24 @@ jobs:
           echo "Token is set"
       - name: Configure git
         run: |
-          git config user.name  "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config user.name  "<enter your github username>"
+          git config user.email "<enter your github email>"
+
       - name: Install kustomize
         run: |
           curl -s "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh" | bash
           sudo mv kustomize /usr/local/bin/
+
       - name: Update dev tag
         run: |
           cd k8s/overlays/dev
           kustomize edit set image training-app=${{ env.IMAGE_NAME }}:${{ needs.build-push.outputs.image_tag }}
+
       - name: Update staging tag
         run: |
           cd k8s/overlays/staging
           kustomize edit set image training-app=${{ env.IMAGE_NAME }}:${{ needs.build-push.outputs.image_tag }}
+          
       - name: Commit and push
         run: |
           git add k8s/overlays/dev/kustomization.yaml k8s/overlays/staging/kustomization.yaml
@@ -172,10 +177,7 @@ jobs:
     if: always()
     steps:
       - run: |
-          echo "## Pipeline Result" >> $GITHUB_STEP_SUMMARY
-          echo "| Job | Result |" >> $GITHUB_STEP_SUMMARY
-          echo "|-----|--------|" >> $GITHUB_STEP_SUMMARY
-          echo "| Tests (node 18+20 matrix) | ${{ needs.lint-and-test.result }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Security scan             | ${{ needs.security-scan.result }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Build & push (multi-arch) | ${{ needs.build-push.result }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Update manifests          | ${{ needs.update-manifests.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "Pipeline Result" >> $GITHUB_STEP_SUMMARY
+          echo "Tests: ${{ needs.test.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "Build: ${{ needs.build.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "Deploy: ${{ needs.deploy.result }}" >> $GITHUB_STEP_SUMMARY
