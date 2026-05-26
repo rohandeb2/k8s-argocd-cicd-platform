@@ -168,6 +168,7 @@ jobs:
           git add k8s/overlays/dev/kustomization.yaml k8s/overlays/staging/kustomization.yaml
           git diff --staged --quiet && echo "No changes" && exit 0
           git commit -m "chore(gitops): update image to ${{ needs.build-push.outputs.image_tag }} [skip ci]"
+          git pull --rebase origin main
           git push origin main
 
   summary:

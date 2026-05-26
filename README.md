@@ -262,7 +262,10 @@ This platform runs on Minikube for local demonstration. For a production deploym
 
 ---
 ## Proof of work:
-![Proof of Work](./img/Deployed.png)
+![Proof of Work](./img/1.png)
+![Proof of Work](./img/2.png)
+![Proof of Work](./img/3.png)
+![Proof of Work](./img/4.png)
 
 ## Author
 
