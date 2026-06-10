@@ -113,8 +113,7 @@ spec:
             capabilities:
               drop: ["ALL"]
 ---
-# ── SyncFail: runs only when sync fails ───────────────────────
-# Use case: send alert, rollback, clean up partially applied resources
+
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -147,8 +146,9 @@ spec:
               echo "=== SYNC FAILED ==="
               echo "App: training-app"
               echo "Time: $(date)"
-              echo "Action: In real setup, send Slack/PagerDuty alert here"
-              # curl -X POST $SLACK_WEBHOOK -d '{"text":"Sync failed for training-app!"}'
+              curl -X POST -H 'Content-type: application/json' \
+              --data '{"text":"🚨 ALERT: CPU usage exceeded 80% on server web-01"}' \
+              https://hooks.slack.com/services/T87t60/Bopit890/YgG9798
           resources:
             requests:
               memory: "32Mi"
